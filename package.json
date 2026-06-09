@@ -45,7 +45,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@hellocoop/reloaderoo": "file:../../HelloCoop/reloaderoo",
+    "@hellocoop/reloaderoo": "^1.2.0",
     "@types/node": "^20.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
