@@ -118,10 +118,21 @@ type Poller = (url: string) => Promise<Response>
 // Poll a deferred (202) Location until terminal. The poll MUST be signed — the
 // PS pending endpoint verifies the agent signature (an unsigned poll gets 401,
 // which would look like an instant terminal response).
-export async function pollUntilDone(poll: Poller, locationUrl: string, timeoutMs = 180_000): Promise<Response> {
-  const deadline = Date.now() + timeoutMs
+//
+// `onPoll` (optional) is invoked once per poll iteration with elapsed ms — a
+// heartbeat hook for hosts that hold a request open (e.g. emit progress
+// notifications over a long-running tool call).
+export async function pollUntilDone(
+  poll: Poller,
+  locationUrl: string,
+  timeoutMs = 180_000,
+  onPoll?: (elapsedMs: number) => void | Promise<void>,
+): Promise<Response> {
+  const start = Date.now()
+  const deadline = start + timeoutMs
   let res = await poll(locationUrl)
   while (res.status === 202 && Date.now() < deadline) {
+    await onPoll?.(Date.now() - start)
     await new Promise((r) => setTimeout(r, 1000))
     res = await poll(locationUrl)
   }
@@ -273,6 +284,7 @@ export async function invokeAtResourceComplete(
   args: InvokeArgs = {},
   maxRounds = 5,
   pollTimeoutMs = 180_000,
+  onPoll?: (elapsedMs: number) => void | Promise<void>,
 ): Promise<{ status: number; body: unknown }> {
   // Poll deferred URLs signed with the agent token (long-poll via Prefer: wait).
   const poll: Poller = (url) =>
@@ -281,7 +293,7 @@ export async function invokeAtResourceComplete(
     const result = await invokeAtResource(cfg, l1, operationId, args)
     if (result.kind === 'result') return { status: result.status, body: result.body }
     await onInteraction(result.interaction.url, result.interaction.code)
-    await pollUntilDone(poll, result.interaction.pollUrl, pollTimeoutMs)
+    await pollUntilDone(poll, result.interaction.pollUrl, pollTimeoutMs, onPoll)
   }
   throw new Error('invoke did not complete after interactions')
 }

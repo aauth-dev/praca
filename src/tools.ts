@@ -10,7 +10,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { invokeAtResource } from './agent.js'
+import { invokeAtResource, invokeAtResourceComplete } from './agent.js'
 import type { PracaConfig } from './agent.js'
 import { canonicalizeHost } from './host.js'
 import type { IdentityProvider } from './identity.js'
@@ -38,6 +38,18 @@ export interface PracaDeps {
   // Supplies the local-part hint for the agent id. The stdio bin derives it
   // from the MCP client's name; omitted by hosts that allocate their own.
   agentLocal?: () => string | undefined
+  // How `invoke` handles a required interaction.
+  //   'surface' (default): non-blocking — return the interaction URL as text and
+  //     let the caller drive it + re-invoke (stdio / browser behavior).
+  //   'await': block — relay the interaction (onInteraction), poll until terminal
+  //     (heartbeat each round via onPoll), and return the completed result on the
+  //     original call. For HTTP hosts that hold a long-running tool call open.
+  interaction?: {
+    mode?: 'surface' | 'await'
+    onInteraction?: (url: string, code: string) => void | Promise<void>
+    onPoll?: (elapsedMs: number) => void | Promise<void>
+    pollTimeoutMs?: number
+  }
 }
 
 const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] })
@@ -302,12 +314,28 @@ export async function buildPracaTools(server: McpServer, deps: PracaDeps): Promi
       if (!c.ok) return text(BOOTSTRAP_GUIDANCE)
       const found = await requireL1(resource)
       if (!found.ok) return text(found.msg)
+      const invokeArgs = { pathParams: path_params, query, body }
       try {
-        const result = await invokeAtResource(c.cfg, found.l1, op_id, {
-          pathParams: path_params,
-          query,
-          body,
-        })
+        // 'await' mode: block — relay + poll the interaction to completion, return
+        // the result on this original call. (HTTP hosts holding a long call open.)
+        if (deps.interaction?.mode === 'await') {
+          const handler = deps.interaction.onInteraction ?? (() => {})
+          const completed = await invokeAtResourceComplete(
+            c.cfg,
+            found.l1,
+            op_id,
+            handler,
+            invokeArgs,
+            5,
+            deps.interaction.pollTimeoutMs ?? 180_000,
+            deps.interaction.onPoll,
+          )
+          if (completed.status >= 200 && completed.status < 300) await l1.touch(found.l1.resource)
+          return json(completed)
+        }
+
+        // 'surface' mode (default): non-blocking — return the URL as text.
+        const result = await invokeAtResource(c.cfg, found.l1, op_id, invokeArgs)
         if (result.kind === 'interaction') {
           return surfaceInteraction(result.interaction.url, result.interaction.code, 'invoke')
         }
