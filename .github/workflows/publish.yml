@@ -1,0 +1,61 @@
+name: Publish to npm
+
+# Publishes @aauth/praca when a version tag (vX.Y.Z) is pushed. Uses npm Trusted
+# Publishing (OIDC) — no NPM_TOKEN secret in CI — and attaches a signed
+# provenance attestation linking the tarball to this commit + workflow run.
+#
+# Release flow:
+#   1. Bump "version" in package.json on main and commit.
+#   2. Tag the commit to match, e.g.  git tag v0.1.1  &&  git push origin v0.1.1
+#   3. This workflow builds, tests, and publishes that version with provenance.
+#
+# One-time setup on npmjs.com (package → Settings → Trusted Publisher):
+#   Publisher: GitHub Actions · Organization: aauth-dev · Repository: praca
+#   Workflow filename: publish.yml
+# Until that is configured the publish step will fail to authenticate. (Token
+# fallback: configure an npm granular automation token as the NPM_TOKEN repo
+# secret and add `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` to the publish env;
+# trusted publishing is preferred and needs no stored secret.)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing (OIDC) requires a recent npm.
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      # Guard: the pushed tag must match package.json (skipped on manual runs).
+      - name: Verify tag matches package.json version
+        if: github.ref_type == 'tag'
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - run: npm run typecheck
+      - run: npm test
+
+      # prepublishOnly runs the build; --provenance attaches the attestation.
+      - run: npm publish --provenance --access public
