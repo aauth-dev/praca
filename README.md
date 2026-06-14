@@ -57,7 +57,7 @@ Any stdio MCP host: `npx -y @aauth/proxy`.
 
 | Flag | Purpose |
 |---|---|
-| `--log` | Tee JSON-RPC frames to `~/.aauth/praca/logs/<ISO>.jsonl` for debugging. |
+| `--log` | Tee JSON-RPC frames to `~/.aauth/proxy/logs/<ISO>.jsonl` for debugging. |
 
 ## Environment variables
 

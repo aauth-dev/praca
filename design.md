@@ -30,7 +30,7 @@ Reference implementation of an AAuth agent for MCP-aware agent hosts. The agent 
             │  - AP signing key in enclave    │
             │  - service catalog              │
             │  - interaction relay to PS      │
-            │  - state in ~/.aauth/praca/     │
+            │  - state in ~/.aauth/proxy/     │
             └────────────────┬────────────────┘
                              │ AAuth-signed HTTPS
             ┌────────────────▼────────────────┐
@@ -95,7 +95,7 @@ Three layers, all file-backed, all per-machine.
 
 **Agent identity** lives outside the agent proxy, in `~/.aauth/` via `@aauth/local-keys` (bootstrapped once per machine via `@aauth/bootstrap`). The agent proxy reads from it at startup; it owns no key material itself. This is what lets the same identity back multiple agent surfaces (the agent proxy, future CLI tools) without each carrying its own bootstrap.
 
-**The agent proxy's own state** at `~/.aauth/praca/`:
+**The agent proxy's own state** at `~/.aauth/proxy/`:
 
 | Path | What | Refresh |
 |---|---|---|
@@ -127,7 +127,7 @@ The discovery layer is built around the three-layer state model (`L1` added / `L
 
 ### L2 — discoverable resources (the registry)
 
-The registry at `registry.aauth.dev` is an agent-token-gated Worker. The agent proxy calls `GET /resources` over a **signed** request using the same agent-token + HTTP-signature path it already uses for any AAuth resource. The response is `{ resources: RegistryEntry[], updated }`; each entry carries `{ issuer, name, description, access_mode, logo_uri?, added, submitted_by }` — and only that. The agent proxy caches at `~/.aauth/praca/catalog/registry.json`, refreshes on startup + 24h background, ETag-conditional.
+The registry at `registry.aauth.dev` is an agent-token-gated Worker. The agent proxy calls `GET /resources` over a **signed** request using the same agent-token + HTTP-signature path it already uses for any AAuth resource. The response is `{ resources: RegistryEntry[], updated }`; each entry carries `{ issuer, name, description, access_mode, logo_uri?, added, submitted_by }` — and only that. The agent proxy caches at `~/.aauth/proxy/catalog/registry.json`, refreshes on startup + 24h background, ETag-conditional.
 
 `PRACA_REGISTRY_URL` overrides the default for tests / self-hosted registries. Operators may also publish their own resource directory: for example, Hello's resource proxy operator advertises its hosted proxies at `proxy.aauth.dev` and the agent proxy treats it as a registry source under the same signed-call contract.
 
@@ -139,7 +139,7 @@ The agent calls `add_resource(host_or_url)`. The agent proxy:
 2. Fetches `https://{host}/.well-known/aauth-resource.json` (manual redirect, timeout, size cap — same SSRF guards the registry applies).
 3. Validates: `issuer === https://{host}`, present description, valid `access_mode`, at least one supported entry in `r3_vocabularies` (or — explicit choice — accepts a vocab-less resource and exposes only `invoke` as a generic call).
 4. Picks the vocabulary adapters it can use (see "Vocabularies").
-5. Writes the entry to `~/.aauth/praca/resources.json`.
+5. Writes the entry to `~/.aauth/proxy/resources.json`.
 
 After `add_resource`:
 - `access_mode: agent-token` resources are immediately invokable.
@@ -149,7 +149,7 @@ After `add_resource`:
 
 ### L3 — operations within a resource
 
-Per-resource ops are fetched on first `list_operations`/`get_operations` call against that resource, cached at `~/.aauth/praca/catalog/{host}/{vocab}.json`. The agent proxy reads the resource's `r3_vocabularies` and loads each one through the matching adapter; vocab docs are cached with a TTL and refreshed lazily.
+Per-resource ops are fetched on first `list_operations`/`get_operations` call against that resource, cached at `~/.aauth/proxy/catalog/{host}/{vocab}.json`. The agent proxy reads the resource's `r3_vocabularies` and loads each one through the matching adapter; vocab docs are cached with a TTL and refreshed lazily.
 
 `list_operations` returns a bounded summary list (no schemas); `get_operations` is the explicit "give me the full schemas for these op_ids" call. This separation matters because schemas dominate token cost — Speakeasy's published numbers show schema-bearing tool listings 5-10× larger than summary-only listings. (See "Tool surface".)
 
@@ -171,7 +171,7 @@ When the catalog holds more than one entry sharing a `wraps` value — several o
 - two or more candidates rank equally, or
 - the user's policy says "always ask" for this upstream or operator.
 
-**Policy storage.** The policy lives in the agent proxy's state dir as `~/.aauth/praca/operator-policy.json`:
+**Policy storage.** The policy lives in the agent proxy's state dir as `~/.aauth/proxy/operator-policy.json`:
 
 ```json
 {
@@ -271,7 +271,7 @@ When PS can't reach the user via mobile push (offline, no app installed), PS may
 What ships:
 
 - the agent proxy as `@aauth/proxy`, stdio MCP server, eight-tool v1 surface (`find_resources`, `add_resource`, `list_resources`, `remove_resource`, `connect`, `list_operations`, `get_operations`, `invoke`)
-- Three-layer state at `~/.aauth/praca/` (resources / registry cache / vocab cache + connections)
+- Three-layer state at `~/.aauth/proxy/` (resources / registry cache / vocab cache + connections)
 - Signed `GET registry.aauth.dev/resources` for L2 discovery; direct URL add via `add_resource` works without registry
 - Vocabulary adapter abstraction with one full OpenAPI adapter and one partial AsyncAPI adapter (publish only)
 - Interaction relay to PS
@@ -438,7 +438,7 @@ Get these right in v1 and v.next is a runtime bolt-on.
 
 1. ✅ **Phase 0 — Skeleton.** the agent proxy stdio MCP server with single-resource `discover`/`invoke`/`connect`. Central `hostCall` dispatcher, catalog-driven, caller identity as parameter. Validated against Claude Code.
 2. ✅ **Phase 1 — First real resource.** Connected to a real AAuth-fronted upstream and ran the full AAuth dance end-to-end: resource_tokens, escalation, interactions, interaction relay.
-3. ✅ **Phase 2 — Discovery layer (multi-resource).** Refactored `catalog.ts` into a `VocabAdapter` interface (one OpenAPI adapter); added registry client (signed `GET /resources` + ETag); added L1 store at `~/.aauth/praca/resources.json`; rewired `server.ts` to the eight-tool surface; added `PRACA_REGISTRY_URL`.
+3. ✅ **Phase 2 — Discovery layer (multi-resource).** Refactored `catalog.ts` into a `VocabAdapter` interface (one OpenAPI adapter); added registry client (signed `GET /resources` + ETag); added L1 store at `~/.aauth/proxy/resources.json`; rewired `server.ts` to the eight-tool surface; added `PRACA_REGISTRY_URL`.
 4. **Phase 3 — AsyncAPI partial.** AsyncAPI adapter listing `send` + `receive` ops; `invoke` runs `async.send`; `async.receive` returns `async_subscribe_requires_subagent`. Drives the second-vocab validation of the adapter interface.
 5. **Phase 4 — Container host bridge.** the agent proxy exposes HTTP listener for container-resident hosts. Register via host's MCP config pointing at `host.docker.internal:<port>`. Validate signing + invoke from inside container.
 6. **Phase 5 — Approval UX.** Wire up notification fallback path (PS → host notification surface) for cases where mobile push is unavailable.

@@ -4,7 +4,7 @@
 // listing requires the agent proxy's agent token + HTTP signature — the same path used
 // for any other agent-token resource. The ETag cache is injected via
 // RegistryCache; the stdio server uses the filesystem default
-// (createFsRegistryCache), backed by ~/.aauth/praca/catalog/registry.json.
+// (createFsRegistryCache), backed by ~/.aauth/proxy/catalog/registry.json.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -46,7 +46,7 @@ export function registryUrl(): string {
 }
 
 // Filesystem-backed RegistryCache — the default for the stdio server. `dir`
-// overrides the state directory (default ~/.aauth/praca).
+// overrides the state directory (default ~/.aauth/proxy).
 export function createFsRegistryCache(opts: { dir?: string } = {}): RegistryCache {
   const cachePath = join(opts.dir ?? join(homedir(), '.aauth', 'praca'), 'catalog', 'registry.json')
   return {

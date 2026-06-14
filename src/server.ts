@@ -52,7 +52,7 @@ function slugifyClientName(name: string | undefined): string {
 const { version: PKG_VERSION } = createRequire(import.meta.url)('../package.json') as { version: string }
 const server = new McpServer({ name: 'aauth-proxy', version: PKG_VERSION })
 
-// `--log` tees stdio JSON-RPC frames to ~/.aauth/praca/logs/<ISO>.jsonl as
+// `--log` tees stdio JSON-RPC frames to ~/.aauth/proxy/logs/<ISO>.jsonl as
 // `{ts, dir, frame}` lines (same shape reloaderoo writes). Opt-in; best-effort —
 // silently no-ops if the log directory can't be created or a line isn't JSON.
 function setupFrameLog(): void {
