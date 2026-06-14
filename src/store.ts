@@ -1,6 +1,6 @@
 // L1 — added resources. The L1Store interface lets a host inject its own
 // backend; the stdio server uses the filesystem default (createFsL1Store),
-// backed by ~/.aauth/praca/resources.json.
+// backed by ~/.aauth/proxy/resources.json.
 //
 // The agent proxy writes here on add_resource (always), on first successful auth at a
 // resource (touches last_used), and on remove_resource. No PS-side state is
@@ -42,7 +42,7 @@ interface L1File {
 }
 
 // Filesystem-backed L1Store — the default for the stdio server. `dir` overrides
-// the state directory (default ~/.aauth/praca).
+// the state directory (default ~/.aauth/proxy).
 export function createFsL1Store(opts: { dir?: string } = {}): L1Store {
   const stateDir = opts.dir ?? join(homedir(), '.aauth', 'praca')
   const l1Path = join(stateDir, 'resources.json')
