@@ -129,7 +129,7 @@ The discovery layer is built around the three-layer state model (`L1` added / `L
 
 The registry at `registry.aauth.dev` is an agent-token-gated Worker. The agent proxy calls `GET /resources` over a **signed** request using the same agent-token + HTTP-signature path it already uses for any AAuth resource. The response is `{ resources: RegistryEntry[], updated }`; each entry carries `{ issuer, name, description, access_mode, logo_uri?, added, submitted_by }` — and only that. The agent proxy caches at `~/.aauth/proxy/catalog/registry.json`, refreshes on startup + 24h background, ETag-conditional.
 
-`PRACA_REGISTRY_URL` overrides the default for tests / self-hosted registries. Operators may also publish their own resource directory: for example, Hello's resource proxy operator advertises its hosted proxies at `proxy.aauth.dev` and the agent proxy treats it as a registry source under the same signed-call contract.
+`PROXY_REGISTRY_URL` overrides the default for tests / self-hosted registries. Operators may also publish their own resource directory: for example, Hello's resource proxy operator advertises its hosted proxies at `proxy.aauth.dev` and the agent proxy treats it as a registry source under the same signed-call contract.
 
 ### L1 — added resources
 
@@ -438,7 +438,7 @@ Get these right in v1 and v.next is a runtime bolt-on.
 
 1. ✅ **Phase 0 — Skeleton.** the agent proxy stdio MCP server with single-resource `discover`/`invoke`/`connect`. Central `hostCall` dispatcher, catalog-driven, caller identity as parameter. Validated against Claude Code.
 2. ✅ **Phase 1 — First real resource.** Connected to a real AAuth-fronted upstream and ran the full AAuth dance end-to-end: resource_tokens, escalation, interactions, interaction relay.
-3. ✅ **Phase 2 — Discovery layer (multi-resource).** Refactored `catalog.ts` into a `VocabAdapter` interface (one OpenAPI adapter); added registry client (signed `GET /resources` + ETag); added L1 store at `~/.aauth/proxy/resources.json`; rewired `server.ts` to the eight-tool surface; added `PRACA_REGISTRY_URL`.
+3. ✅ **Phase 2 — Discovery layer (multi-resource).** Refactored `catalog.ts` into a `VocabAdapter` interface (one OpenAPI adapter); added registry client (signed `GET /resources` + ETag); added L1 store at `~/.aauth/proxy/resources.json`; rewired `server.ts` to the eight-tool surface; added `PROXY_REGISTRY_URL`.
 4. **Phase 3 — AsyncAPI partial.** AsyncAPI adapter listing `send` + `receive` ops; `invoke` runs `async.send`; `async.receive` returns `async_subscribe_requires_subagent`. Drives the second-vocab validation of the adapter interface.
 5. **Phase 4 — Container host bridge.** the agent proxy exposes HTTP listener for container-resident hosts. Register via host's MCP config pointing at `host.docker.internal:<port>`. Validate signing + invoke from inside container.
 6. **Phase 5 — Approval UX.** Wire up notification fallback path (PS → host notification surface) for cases where mobile push is unavailable.

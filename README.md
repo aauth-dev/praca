@@ -65,10 +65,10 @@ All optional; sensible defaults come from `@aauth/local-keys`.
 
 | Var | Default | Purpose |
 |---|---|---|
-| `PRACA_REGISTRY_URL` | `https://registry.aauth.dev` | AAuth resource registry |
-| `PRACA_PS_URL` | from local-keys | Person Server URL |
-| `PRACA_AGENT_URL` | first configured | Agent provider URL |
-| `PRACA_AGENT_TOKEN` + `PRACA_AGENT_PRIVATE_JWK` (or `PRACA_AGENT_KEY_FILE`) | — | Test-only software-identity override that bypasses local-keys |
+| `PROXY_REGISTRY_URL` | `https://registry.aauth.dev` | AAuth resource registry |
+| `PROXY_PS_URL` | from local-keys | Person Server URL |
+| `PROXY_AGENT_URL` | first configured | Agent provider URL |
+| `PROXY_AGENT_TOKEN` + `PROXY_AGENT_PRIVATE_JWK` (or `PROXY_AGENT_KEY_FILE`) | — | Test-only software-identity override that bypasses local-keys |
 
 ## License
 
