@@ -95,6 +95,15 @@ function applyPathParams(path: string, pathParams: Record<string, string> = {}):
   )
 }
 
+// Re-index from raw if ops was lost during JSON serialization (R2 cache round-trip
+// turns the Map into a plain object that lacks .values()).
+function getOps(doc: OpenAPIVocabDoc): Map<string, ResolvedOp> {
+  if (doc.ops instanceof Map) return doc.ops
+  const ops = indexOperations(doc.raw)
+  doc.ops = ops
+  return ops
+}
+
 export class OpenAPIAdapter implements VocabAdapter<OpenAPIVocabDoc> {
   readonly vocabUri = 'urn:aauth:vocabulary:openapi'
 
@@ -108,7 +117,7 @@ export class OpenAPIAdapter implements VocabAdapter<OpenAPIVocabDoc> {
   listOperations(doc: OpenAPIVocabDoc, query?: string): OpSummary[] {
     const q = query ?? ''
     const out: OpSummary[] = []
-    for (const op of doc.ops.values()) {
+    for (const op of getOps(doc).values()) {
       if (!matches(op, q)) continue
       out.push({
         opId: op.opId,
@@ -124,8 +133,9 @@ export class OpenAPIAdapter implements VocabAdapter<OpenAPIVocabDoc> {
 
   getOperations(doc: OpenAPIVocabDoc, opIds: string[]): OpDetail[] {
     const out: OpDetail[] = []
+    const ops = getOps(doc)
     for (const opId of opIds) {
-      const op = doc.ops.get(opId)
+      const op = ops.get(opId)
       if (!op) continue
       out.push({
         opId: op.opId,
@@ -143,7 +153,7 @@ export class OpenAPIAdapter implements VocabAdapter<OpenAPIVocabDoc> {
   }
 
   buildInvocation(doc: OpenAPIVocabDoc, opId: string, args: InvokeArgs): InvocationPlan {
-    const op = doc.ops.get(opId)
+    const op = getOps(doc).get(opId)
     if (!op) throw new Error(`openapi: unknown operation ${opId}`)
     const path = applyPathParams(op.path, args.pathParams)
     const body = args.body
