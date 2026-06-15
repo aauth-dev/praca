@@ -82,7 +82,11 @@ export async function fetchRegistry(cfg: ProxyConfig, cache: RegistryCache): Pro
   })
 
   if (res.status === 304 && cached) return cached.index
-  if (!res.ok) throw new Error(`registry ${url}: ${res.status}`)
+  if (!res.ok) {
+    let detail = ''
+    try { detail = ` — ${JSON.stringify(await res.json())}` } catch { /* ignore */ }
+    throw new Error(`registry ${url}: ${res.status}${detail}`)
+  }
 
   const index = (await res.json()) as RegistryIndex
   const etag = res.headers.get('etag') ?? undefined

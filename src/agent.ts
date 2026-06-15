@@ -17,10 +17,35 @@ import type { L1Entry } from './store.js'
 
 export type AgentSigningKey = Parameters<typeof signedFetch>[1]['signingKey']
 
+/**
+ * Optional hints forwarded verbatim as extra body parameters in every POST to
+ * the PS token endpoint (AAuth spec §8.1). All fields are optional; include only
+ * those the host has learned about the user.
+ */
+export interface PSTokenHints {
+  login_hint?: string // user identifier hint (e.g. Hello wallet sub or email)
+  domain_hint?: string // DNS domain for B2B PS routing
+  tenant?: string // tenant identifier scoped to the PS
+  justification?: string // Markdown: why access is being requested (shown to user)
+  platform?: string // runtime platform identifier
+  device?: string // short human-readable device / browser name
+  upstream_token?: string // auth token for call chaining
+  subagent_token?: string // parent agent requesting auth on behalf of a sub-agent
+  prompt?: string // space-delimited; controls reauthentication / consent prompts
+  capabilities?: string[] // overrides the default ['interaction'] sent to the PS
+}
+
 export interface ProxyConfig {
   psUrl: string
   agentPrivateJwk: AgentSigningKey // the agent's private JWK
   agentToken: string // aa-agent+jwt (cnf = agent pubkey, ps = psUrl)
+  /** Extra parameters forwarded to every PS token endpoint request. */
+  psHints?: PSTokenHints
+  /**
+   * Called with each auth_token received from the PS before it is used.
+   * Hosts can use this to record or validate the PS sub across exchanges.
+   */
+  onAuthToken?: (token: string) => void | Promise<void>
 }
 
 export interface InvokeArgs {
@@ -151,11 +176,24 @@ type ExchangeOutcome =
 // interaction (surfaced for the caller to drive + retry) rather than requiring a
 // registered mobile device. On PS endpoints this is a token-request parameter,
 // not a header (the AAuth-Capabilities header is for resource requests).
-async function exchangeAtPS(signAgent: SignedFetch, tokenEndpoint: string, resourceToken: string): Promise<ExchangeOutcome> {
+//
+// cfg.psHints (if set) are spread into the body — all §8.1 optional params.
+// cfg.onAuthToken (if set) is called with the auth_token before it is returned.
+async function exchangeAtPS(
+  signAgent: SignedFetch,
+  tokenEndpoint: string,
+  resourceToken: string,
+  cfg: ProxyConfig,
+): Promise<ExchangeOutcome> {
+  const { capabilities, ...otherHints } = cfg.psHints ?? {}
   const res = await signAgent(tokenEndpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ resource_token: resourceToken, capabilities: ['interaction'] }),
+    body: JSON.stringify({
+      resource_token: resourceToken,
+      capabilities: capabilities ?? ['interaction'],
+      ...otherHints,
+    }),
   })
   if (res.status === 202) {
     const interaction = interactionFrom(res)
@@ -163,6 +201,7 @@ async function exchangeAtPS(signAgent: SignedFetch, tokenEndpoint: string, resou
   }
   if (!res.ok) return { kind: 'result', status: res.status, body: await safeBody(res) }
   const { auth_token } = (await res.json()) as { auth_token: string }
+  if (cfg.onAuthToken) await cfg.onAuthToken(auth_token)
   return { kind: 'token', authToken: auth_token }
 }
 
@@ -222,7 +261,7 @@ export async function invokeAtResource(
   const { resource_token } = (await authzRes.json()) as { resource_token: string }
 
   // 2. exchange at the PS for an auth token (surface a consent interaction if any).
-  const ex = await exchangeAtPS(signAgent, ps.token_endpoint, resource_token)
+  const ex = await exchangeAtPS(signAgent, ps.token_endpoint, resource_token, cfg)
   if (ex.kind !== 'token') return ex
 
   // 3. call the resource. Writes carry the body; the agent signs over it so the
@@ -260,7 +299,7 @@ export async function invokeAtResource(
   const challenge =
     apiRes.status === 401 ? parseAuthTokenChallenge(apiRes.headers.get('aauth-requirement')) : undefined
   if (challenge) {
-    const stepEx = await exchangeAtPS(signAgent, ps.token_endpoint, challenge)
+    const stepEx = await exchangeAtPS(signAgent, ps.token_endpoint, challenge, cfg)
     if (stepEx.kind !== 'token') return stepEx
     apiRes = await callWith(stepEx.authToken)
     if (apiRes.status === 202) {

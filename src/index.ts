@@ -12,6 +12,7 @@ export type {
   InvokeArgs,
   InvokeResult,
   ProxyConfig,
+  PSTokenHints,
 } from './agent.js'
 
 export { buildProxyTools } from './tools.js'
