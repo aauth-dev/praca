@@ -11,7 +11,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { renderUnicodeCompact } from 'uqr'
 import { z } from 'zod'
-import { invokeAtResource } from './agent.js'
+import { deleteAtAdmin, invokeAtResource } from './agent.js'
 import type { InvokeResult, ProxyConfig } from './agent.js'
 import { canonicalizeHost } from './host.js'
 import type { IdentityProvider } from './identity.js'
@@ -316,6 +316,30 @@ export async function buildProxyTools(server: McpServer, deps: ProxyDeps): Promi
 
       if (result.status >= 200 && result.status < 300) await l1.touch(found.l1.resource)
       return json({ status: result.status, body: result.body })
+    },
+  )
+
+  server.registerTool(
+    'reset_tokens',
+    {
+      description: describeWithL1(
+        'Clear all stored upstream OAuth tokens for a resource. Use during testing to force a fresh upstream OAuth flow without touching PS consent state.',
+      ),
+      inputSchema: { resource: z.string() },
+    },
+    async ({ resource }) => {
+      const c = await getConfig()
+      if (!c.ok) return text(BOOTSTRAP_GUIDANCE)
+      const found = await requireL1(resource)
+      if (!found.ok) return text(found.msg)
+      try {
+        const res = await deleteAtAdmin(c.cfg, found.l1, '/admin/tokens')
+        if (!res.ok) return text(`reset_tokens failed: ${res.status}`)
+        const body = (await res.json()) as { cleared: number }
+        return text(`Cleared ${body.cleared} token(s) for ${found.l1.resource}.`)
+      } catch (err) {
+        return text(`reset_tokens error: ${(err as Error).message}`)
+      }
     },
   )
 }

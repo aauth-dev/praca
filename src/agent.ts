@@ -355,3 +355,9 @@ export async function invokeAtResourceComplete(
   }
   throw new Error('invoke did not complete after interactions')
 }
+
+// Signed DELETE to an admin endpoint on the resource (e.g. /admin/tokens).
+// Uses the agent token so the resource can verify the caller owns the key.
+export async function deleteAtAdmin(cfg: ProxyConfig, l1: L1Entry, path: string): Promise<Response> {
+  return signWith(cfg, cfg.agentToken)(`${l1.origin}${path}`, { method: 'DELETE' })
+}
