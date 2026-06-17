@@ -38,14 +38,14 @@ export interface ProxyDeps {
   // For stdio hosts: open the OS browser and return; invoke falls back to returning
   // the URL as text. onComplete is called by the host when authorization finishes,
   // resolving any waiters registered via authPending.
-  onInteraction?: (url: string, code: string, pollUrl: string, onComplete?: () => void) => void | Promise<void>
-  // Tracks in-flight authorization Promises keyed by resource. When invoke gets a
-  // 202 and onInteraction returns (fallback path), the authDone promise is stored
-  // here. Subsequent invokes for the same resource wait on it (up to 30s) instead
-  // of re-hitting the resource and PS and creating new temporal state.
+  onInteraction?: (url: string, code: string, pollUrl: string, onComplete?: () => void | Promise<void>) => void | Promise<void>
+  // Tracks in-flight authorization per resource. Implementations should survive
+  // across MCP session DO instances (e.g. backed by a longer-lived UserStore DO).
+  // checkAndWait blocks up to timeoutMs; register/resolve bracket the auth flow.
   authPending?: {
-    get(resource: string): Promise<void> | undefined
-    set(resource: string, done: Promise<void>): void
+    checkAndWait(resource: string, timeoutMs: number): Promise<'ready' | 'waiting'>
+    register(resource: string): Promise<void>
+    resolve(resource: string): Promise<void>
   }
   // Supplies the local-part hint for the agent id. The stdio bin derives it
   // from the MCP client's name; omitted by hosts that allocate their own.
@@ -274,20 +274,11 @@ export async function buildProxyTools(server: McpServer, deps: ProxyDeps): Promi
       // If there's an in-flight authorization for this resource, wait up to 30s
       // for it to complete before hitting the resource/PS again. This avoids
       // creating new temporal state (codes, pending interactions) on every retry.
-      const inFlight = deps.authPending?.get(found.l1.resource)
-      if (inFlight) {
-        let resolved = false
-        await Promise.race([
-          inFlight.then(() => { resolved = true }),
-          new Promise<void>((r) => setTimeout(r, 30_000)),
-        ])
-        if (!resolved) {
-          return text(
-            `Authorization for ${found.l1.resource} is still in progress.\n\n` +
-            `The user has not yet completed authorization. Try again in a moment.`,
-          )
-        }
-        // Auth completed — fall through to invokeAtResource; PS now has the grant.
+      if (await deps.authPending?.checkAndWait(found.l1.resource, 30_000) === 'waiting') {
+        return text(
+          `Authorization for ${found.l1.resource} is still in progress.\n\n` +
+          `The user has not yet completed authorization. Try again in a moment.`,
+        )
       }
 
       let result: InvokeResult
@@ -298,17 +289,14 @@ export async function buildProxyTools(server: McpServer, deps: ProxyDeps): Promi
       }
 
       if (result.kind === 'interaction') {
-        // Wire up a Promise that resolves when onInteraction's poll completes.
-        // This is stored in authPending so future invokes can wait on it.
-        let markComplete: (() => void) | undefined
-        const authDone = new Promise<void>((r) => { markComplete = r })
+        // onComplete resolves the UserStore pending-auth waiter when the poll finishes.
+        const onComplete = () => deps.authPending?.resolve(found.l1.resource)
 
         // onInteraction may throw (cloud: MCP URL elicitation) or return (stdio/fallback).
-        await deps.onInteraction?.(result.interaction.url, result.interaction.code, result.interaction.pollUrl, markComplete)
+        await deps.onInteraction?.(result.interaction.url, result.interaction.code, result.interaction.pollUrl, onComplete)
 
         // Only reached if onInteraction returned (fallback path, not elicitation).
-        // Register the promise so concurrent/subsequent invokes wait on it.
-        deps.authPending?.set(found.l1.resource, authDone)
+        await deps.authPending?.register(found.l1.resource)
 
         const authUrl = `${result.interaction.url}?code=${result.interaction.code}`
         const qr = renderUnicodeCompact(authUrl)
